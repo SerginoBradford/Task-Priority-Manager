@@ -384,3 +384,31 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Dates de rendu ---------- */
+.wday .dots { display: flex; gap: 3px; height: 6px; align-items: center; }
+.wday .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--p4); }
+.wday .dots i.p1 { background: var(--p1); } .wday .dots i.p2 { background: var(--p2); }
+.wday .dots i.p3 { background: var(--p3); } .wday .dots i.p4 { background: var(--p4); }
+.wday .cnt { font-size: 10px; letter-spacing: -.01em; white-space: nowrap; }
+.when.soon { color: var(--p2); font-weight: 500; }
+.when.late { color: var(--p1); font-weight: 500; }
+.explain { margin: 10px 0 0; font-size: 12.5px; color: var(--muted); }
+.qdate { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 0 0 0 8px; min-width: 0; }
+.qdate span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.quick .qdate input[type="date"] { border: 0; background: none; padding: 7px 8px 7px 0; }
+.later > summary { list-style: none; cursor: pointer; }
+.later > summary::-webkit-details-marker { display: none; }
+.later .hint { font-size: 12px; font-weight: 600; color: var(--accent); }
+.later[open] .hint { font-size: 0; }
+.later[open] .hint::after { content: "Masquer"; font-size: 12px; }
+.later-sub { margin: -4px 0 10px; font-size: 12.5px; color: var(--muted); }
+@media (max-width: 760px) {
+  .wday .cnt { display: none; }
+  .wday .dots { height: 8px; }
+  .quick .qopts { flex-wrap: wrap; }
+  .quick .qopts > select { flex: 1 1 110px; }
+  .quick .qopts > .qdate { flex: 1 1 170px; }
+  .quick .qdate input[type="date"] { flex: 1; min-width: 0; }
+  .quick .qopts > button { flex: 1 1 100%; }
+}

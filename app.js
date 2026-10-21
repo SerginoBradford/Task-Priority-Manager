@@ -49,15 +49,37 @@
     return r ? `${h} h ${pad(r)}` : `${h} h`;
   };
 
-  function dueLabel(due) {
-    if (!due) return { text: 'Sans date', cls: '' };
-    const t = todayIso();
-    const d = diffDays(due, t);
-    if (d < 0) return { text: `En retard · ${fmt(due, { weekday: 'short', day: 'numeric', month: 'short' })}`, cls: 'late' };
-    if (d === 0) return { text: "Aujourd'hui", cls: 'today' };
-    if (d === 1) return { text: 'Demain', cls: '' };
-    if (d < 7) return { text: fmt(due, { weekday: 'short', day: 'numeric' }), cls: '' };
-    return { text: fmt(due, { day: 'numeric', month: 'short' }), cls: '' };
+  // La date d'une tâche est sa DATE DE RENDU (échéance), pas le jour où on la fait.
+  function dueLabel(due, ref = todayIso()) {
+    if (!due) return { text: 'Sans date de rendu', cls: '' };
+    const d = diffDays(due, ref);
+    if (d < 0) return { text: `Rendu dépassé de ${-d} j · ${fmt(due, { weekday: 'short', day: 'numeric' })}`, cls: 'late' };
+    if (d === 0) return { text: ref === todayIso() ? "À rendre aujourd'hui" : 'À rendre ce jour', cls: 'late' };
+    if (d === 1) return { text: 'À rendre demain', cls: 'soon' };
+    if (d < 7) return { text: `À rendre ${fmt(due, { weekday: 'short', day: 'numeric' })} · J-${d}`, cls: d <= 3 ? 'soon' : '' };
+    return { text: `À rendre le ${fmt(due, { day: 'numeric', month: 'short' })}`, cls: '' };
+  }
+
+  // Score d'importance pour un jour donné : priorité + proximité de la date de rendu.
+  // Plus le score est bas, plus la tâche passe en premier.
+  function urgency(t, ref) {
+    if (!t.due_date) return 1.5;
+    const d = diffDays(t.due_date, ref);
+    if (d < 0) return -3;
+    if (d === 0) return -2.5;
+    if (d === 1) return -2;
+    if (d <= 3) return -1;
+    if (d <= 7) return 0;
+    return 1;
+  }
+  const score = (t, ref) => t.priority + urgency(t, ref);
+  function byImportance(ref) {
+    return (a, b) =>
+      (score(a, ref) - score(b, ref)) ||
+      ((a.due_date || '9999') < (b.due_date || '9999') ? -1 : (a.due_date || '9999') > (b.due_date || '9999') ? 1 : 0) ||
+      (a.priority - b.priority) ||
+      ((b.duration || 0) - (a.duration || 0)) ||
+      (a.created_at < b.created_at ? -1 : 1);
   }
 
   const ICON = {
@@ -241,14 +263,7 @@
     ((b.duration || 0) - (a.duration || 0)) ||
     (a.created_at < b.created_at ? -1 : 1);
 
-  function tasksForDay(day) {
-    const t = todayIso();
-    return S.tasks.filter((x) => {
-      if (x.due_date === day) return true;
-      // Les tâches en retard non faites remontent dans la journée d'aujourd'hui
-      return day === t && !x.done && x.due_date && x.due_date < t;
-    });
-  }
+  const doneOn = (t, day) => t.done && t.done_at && isoOf(new Date(t.done_at)) === day;
 
   /* ================= Rendu ================= */
   function render() {
@@ -289,7 +304,7 @@
     el.innerHTML = html;
   }
 
-  function quickAdd(defDate) {
+  function quickAdd() {
     return `<form class="quick" id="quick" autocomplete="off">
       <input type="text" id="q-title" placeholder="Ajouter une tâche…" maxlength="200" aria-label="Nouvelle tâche">
       <div class="qopts">
@@ -297,20 +312,17 @@
           <option value="1">Critique</option><option value="2">Haute</option>
           <option value="3" selected>Moyenne</option><option value="4">Basse</option>
         </select>
-        <input type="date" id="q-date" value="${esc(defDate || '')}" aria-label="Date">
+        <label class="qdate"><span>Rendu</span><input type="date" id="q-date" aria-label="Date de rendu (facultatif)"></label>
         <button class="btn btn-primary btn-sm" type="submit">Ajouter</button>
       </div>
     </form>`;
   }
 
-  function taskItem(t, { rank = null, showDate = false } = {}) {
-    const t0 = todayIso();
-    const late = !t.done && t.due_date && t.due_date < t0;
+  function taskItem(t, { rank = null } = {}) {
     const dl = dueLabel(t.due_date);
     const meta = [];
     meta.push(`<span class="pill">${PRIO[t.priority].label}</span>`);
-    if (showDate) meta.push(`<span class="when ${dl.cls}">${esc(dl.text)}</span>`);
-    else if (late) meta.push(`<span class="late">En retard depuis ${esc(fmt(t.due_date, { weekday: 'short', day: 'numeric' }))}</span>`);
+    if (!t.done || t.due_date) meta.push(`<span class="when ${t.done ? '' : dl.cls}">${esc(dl.text)}</span>`);
     if (t.duration) meta.push(`<span class="dur">${fmtDur(t.duration)}</span>`);
     if (t.category) meta.push(`<span class="cat">${esc(t.category)}</span>`);
     if (t.notes) meta.push(`<span class="has-note">${ICON.note}Note</span>`);
@@ -329,64 +341,93 @@
   }
 
   /* ---------- Ma journée ---------- */
+  // Les dates sont des dates de rendu : la liste du jour contient toutes les tâches
+  // encore à faire, classées selon leur priorité ET la proximité de leur rendu.
   function viewDay() {
     const t0 = todayIso();
     const ws = S.weekStart;
     const we = addDays(ws, 6);
+    const open = S.tasks.filter((x) => !x.done);
 
     let week = '';
     for (let i = 0; i < 7; i++) {
       const d = addDays(ws, i);
-      const list = tasksForDay(d).filter((x) => !x.done);
-      const mins = list.reduce((s, x) => s + (x.duration || 30), 0);
-      const top = list.length ? Math.min(...list.map((x) => x.priority)) : 0;
-      const w = Math.min(100, Math.round(mins / 480 * 100));
+      const due = open.filter((x) => x.due_date === d).sort(byPriority);
       week += `<button type="button" class="wday${d === t0 ? ' is-today' : ''}" data-day="${d}" aria-pressed="${d === S.day}"
-        aria-label="${esc(cap(fmt(d, { weekday: 'long', day: 'numeric', month: 'long' })))}, ${list.length} tâche${list.length > 1 ? 's' : ''}">
+        aria-label="${esc(cap(fmt(d, { weekday: 'long', day: 'numeric', month: 'long' })))}, ${due.length} rendu${due.length > 1 ? 's' : ''}">
         <span class="wd">${esc(fmt(d, { weekday: 'short' }).replace('.', ''))}</span>
         <span class="dn">${dateOf(d).getDate()}</span>
-        <span class="load"><i class="${top ? 'p' + top : ''}" style="width:${list.length ? Math.max(w, 8) : 0}%"></i></span>
-        <span class="cnt">${list.length || ''}</span>
+        <span class="dots">${due.slice(0, 4).map((x) => `<i class="p${x.priority}"></i>`).join('')}</span>
+        <span class="cnt" data-n="${due.length || ''}">${due.length ? due.length + ' rendu' + (due.length > 1 ? 's' : '') : ''}</span>
       </button>`;
     }
 
-    const wLabel = `${fmt(ws, { day: 'numeric', month: 'short' })} – ${fmt(we, { day: 'numeric', month: 'short' })}`;
-    const all = tasksForDay(S.day);
-    const todo = all.filter((x) => !x.done).sort(byPriority);
-    const done = all.filter((x) => x.done).sort((a, b) => (a.done_at || '') < (b.done_at || '') ? 1 : -1);
-    const mins = todo.reduce((s, x) => s + (x.duration || 0), 0);
-    const unknown = todo.filter((x) => !x.duration).length;
-    const pct = all.length ? Math.round(done.length / all.length * 100) : 0;
+    const D = S.day;
+    const past = D < t0;
+    const dueHere = S.tasks.filter((x) => x.due_date === D);
+    const doneHere = S.tasks.filter((x) => doneOn(x, D)).sort((a, b) => (a.done_at < b.done_at ? 1 : -1));
 
-    const dd = diffDays(S.day, t0);
+    const dd = diffDays(D, t0);
     const rel = dd === 0 ? "Aujourd'hui" : dd === 1 ? 'Demain' : dd === -1 ? 'Hier' : '';
-    const title = cap(fmt(S.day, { weekday: 'long', day: 'numeric', month: 'long' }));
-
+    const title = cap(fmt(D, { weekday: 'long', day: 'numeric', month: 'long' }));
+    const pl = (n, w) => `${w}${n > 1 ? 's' : ''}`;
+    let stats = '';
     let body = '';
-    if (!all.length) {
-      body = `<div class="empty" style="margin-top:22px"><h3>Rien de prévu ${dd === 0 ? "aujourd'hui" : 'ce jour-là'}</h3>
-        <p>Ajoute une tâche avec le champ ci-dessus. Elle sera rangée automatiquement selon sa priorité.</p></div>`;
+    let progress = '';
+
+    if (past) {
+      stats = `<span><b>${dueHere.length}</b> ${pl(dueHere.length, 'rendu')} ${pl(dueHere.length, 'prévu')}</span>
+        <span><b>${doneHere.length}</b> ${pl(doneHere.length, 'terminée')} ce jour-là</span>`;
+      if (dueHere.length) body += section('Rendus prévus ce jour-là', dueHere.length, `<ol class="list">${dueHere.sort(byPriority).map((x) => taskItem(x)).join('')}</ol>`);
+      if (doneHere.length) body += section('Terminées ce jour-là', doneHere.length, `<ol class="list">${doneHere.map((x) => taskItem(x)).join('')}</ol>`);
+      if (!body) body = `<div class="empty" style="margin-top:22px"><h3>Rien ce jour-là</h3><p>Aucun rendu prévu et aucune tâche terminée.</p></div>`;
     } else {
-      const focus = todo.slice(0, 3);
-      const rest = todo.slice(3);
-      if (focus.length) {
-        body += section('À faire en premier', focus.length,
-          `<ol class="list focus">${focus.map((x, i) => taskItem(x, { rank: i + 1 })).join('')}</ol>`);
+      const ranked = open.slice().sort(byImportance(D));
+      const main = ranked.filter((x) => score(x, D) <= 3);
+      const later = ranked.filter((x) => score(x, D) > 3);
+      const focus = main.slice(0, 3);
+      const rest = main.slice(3);
+      const focusMins = focus.reduce((s, x) => s + (x.duration || 0), 0);
+      const dueOpen = dueHere.filter((x) => !x.done).length;
+
+      stats = `<span><b>${main.length}</b> à traiter</span>
+        <span><b>${dueOpen}</b> ${pl(dueOpen, 'rendu')} ce jour</span>
+        ${focusMins ? `<span><b>${fmtDur(focusMins)}</b> pour les 3 premières</span>` : ''}
+        ${dd === 0 ? `<span><b>${doneHere.length}</b> ${pl(doneHere.length, 'terminée')} aujourd'hui</span>` : ''}`;
+      if (dd === 0 && (doneHere.length || focus.length)) {
+        const tot = doneHere.length + focus.length;
+        progress = `<div class="progress" aria-hidden="true"><i style="width:${Math.round(doneHere.length / tot * 100)}%"></i></div>`;
+      }
+
+      if (!open.length) {
+        body = `<div class="empty" style="margin-top:22px"><h3>Aucune tâche en cours</h3>
+          <p>Ajoute une tâche avec sa date de rendu : elle sera classée automatiquement selon sa priorité et son échéance.</p></div>`;
       } else {
-        body += `<div class="empty" style="margin-top:22px"><h3>Tout est fait</h3><p>Toutes les tâches de cette journée sont terminées.</p></div>`;
-      }
-      if (rest.length) {
-        body += section('Ensuite', rest.length,
-          `<ol class="list">${rest.map((x, i) => taskItem(x, { rank: i + 4 })).join('')}</ol>`);
-      }
-      if (done.length) {
-        body += section('Terminées', done.length, `<ol class="list">${done.map((x) => taskItem(x)).join('')}</ol>`);
+        if (focus.length) {
+          body += section('À faire en premier', focus.length,
+            `<ol class="list focus">${focus.map((x, i) => taskItem(x, { rank: i + 1 })).join('')}</ol>`);
+        } else {
+          body += `<div class="empty" style="margin-top:22px"><h3>Rien d'urgent</h3><p>Aucune tâche importante ou proche de son rendu. Tu peux avancer sur les tâches plus lointaines.</p></div>`;
+        }
+        if (rest.length) {
+          body += section('Ensuite', rest.length,
+            `<ol class="list">${rest.map((x, i) => taskItem(x, { rank: i + 4 })).join('')}</ol>`);
+        }
+        if (later.length) {
+          body += `<details class="later sec"${!main.length ? ' open' : ''}>
+            <summary class="sec-h"><h2>Plus tard</h2><span class="n">${later.length}</span><span class="rule"></span><span class="hint">Afficher</span></summary>
+            <p class="later-sub">Priorité moyenne ou basse avec un rendu lointain ou sans date.</p>
+            <ol class="list">${later.map((x) => taskItem(x)).join('')}</ol></details>`;
+        }
+        if (dd === 0 && doneHere.length) {
+          body += section("Terminées aujourd'hui", doneHere.length, `<ol class="list">${doneHere.map((x) => taskItem(x)).join('')}</ol>`);
+        }
       }
     }
 
     return `
       <div class="weeknav">
-        <span class="wlabel">${esc(wLabel)}</span>
+        <span class="wlabel">Rendus · ${esc(fmt(ws, { day: 'numeric', month: 'short' }))} – ${esc(fmt(we, { day: 'numeric', month: 'short' }))}</span>
         <button type="button" class="icon-btn" data-act="week-prev" aria-label="Semaine précédente">${ICON.prev}</button>
         <button type="button" class="btn btn-sm btn-ghost" data-act="go-today">Aujourd'hui</button>
         <button type="button" class="icon-btn" data-act="week-next" aria-label="Semaine suivante">${ICON.next}</button>
@@ -395,15 +436,12 @@
       <div class="dayhead">
         <div>
           <h1>${esc(title)}${rel ? ` <span class="rel">· ${rel}</span>` : ''}</h1>
-          <div class="stats">
-            <span><b>${todo.length}</b> à faire</span>
-            ${mins ? `<span><b>${fmtDur(mins)}</b> estimées${unknown ? ` (+${unknown} sans durée)` : ''}</span>` : ''}
-            <span><b>${done.length}</b> terminée${done.length > 1 ? 's' : ''}</span>
-          </div>
+          <div class="stats">${stats}</div>
         </div>
       </div>
-      ${all.length ? `<div class="progress" aria-hidden="true"><i style="width:${pct}%"></i></div>` : ''}
-      ${quickAdd(S.day)}
+      ${progress}
+      ${past ? '' : `<p class="explain">Classées selon la priorité et la proximité de la date de rendu.</p>`}
+      ${quickAdd()}
       ${body}`;
   }
 
@@ -430,7 +468,7 @@
     for (const p of [1, 2, 3, 4]) {
       const g = list.filter((x) => x.priority === p).sort(byPriority);
       if (!g.length) continue;
-      groups += `<div id="prio-${p}">${section(PRIO[p].label, g.length, `<ol class="list">${g.map((x) => taskItem(x, { showDate: true })).join('')}</ol>`)}</div>`;
+      groups += `<div id="prio-${p}">${section(PRIO[p].label, g.length, `<ol class="list">${g.map((x) => taskItem(x)).join('')}</ol>`)}</div>`;
     }
     if (!groups) {
       groups = `<div class="empty" style="margin-top:22px"><h3>${q ? 'Aucun résultat' : S.filter === 'done' ? 'Aucune tâche terminée' : 'Aucune tâche à faire'}</h3>
@@ -442,13 +480,13 @@
         <h1>Vue d'ensemble</h1>
         <div class="stats">
           <span><b>${open.length}</b> à faire</span>
-          ${late ? `<span class="late"><b style="color:inherit">${late}</b> en retard</span>` : ''}
-          <span><b>${nodate}</b> sans date</span>
+          ${late ? `<span class="late"><b style="color:inherit">${late}</b> rendu${late > 1 ? 's' : ''} dépassé${late > 1 ? 's' : ''}</span>` : ''}
+          <span><b>${nodate}</b> sans date de rendu</span>
           <span><b>${S.tasks.length - open.length}</b> terminée${S.tasks.length - open.length > 1 ? 's' : ''}</span>
         </div>
       </div>
       <div class="prio-bar">${bars}</div>
-      ${quickAdd('')}
+      ${quickAdd()}
       <div class="tools">
         <div class="seg" role="group" aria-label="Filtrer">
           <button type="button" data-act="filter" data-f="todo" aria-pressed="${S.filter === 'todo'}">À faire</button>
@@ -560,7 +598,7 @@
     $('#f-title').value = t ? t.title : (defaults.title || '');
     const p = t ? t.priority : (defaults.priority || 3);
     $(`#f-prio-${p}`).checked = true;
-    $('#f-date').value = t ? (t.due_date || '') : (defaults.due_date ?? S.day);
+    $('#f-date').value = t ? (t.due_date || '') : (defaults.due_date || '');
     $('#f-dur').value = t && t.duration ? String(t.duration) : '';
     $('#f-cat').value = t ? (t.category || '') : '';
     $('#f-notes').value = t ? (t.notes || '') : '';

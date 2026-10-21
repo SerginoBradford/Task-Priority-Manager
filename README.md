@@ -2,7 +2,8 @@
 
 Ton outil de gestion de tâches et de notes :
 
-- **Ma journée** : la semaine en haut, et pour chaque jour la liste de tes tâches classées par importance. Les 3 plus importantes sont mises en avant (« À faire en premier »), les tâches en retard remontent automatiquement dans la journée d'aujourd'hui.
+- **Ma journée** : la semaine en haut avec tes dates de rendu, et pour chaque jour la liste de ce qu'il faut faire, classée selon la **priorité** et la **proximité de la date de rendu**. Les 3 plus importantes sont mises en avant (« À faire en premier ») ; les tâches peu prioritaires à rendu lointain sont rangées dans « Plus tard ».
+- La date d'une tâche est sa **date de rendu** (échéance), pas le jour où tu la fais : une tâche « Critique » à rendre dans 2 jours passera avant une tâche « Haute » à rendre dans 3 semaines.
 - **Vue d'ensemble** : toutes tes tâches regroupées par priorité (Critique, Haute, Moyenne, Basse), avec recherche et filtre À faire / Terminées.
 - **Notes** : des notes libres, avec recherche et épinglage. Chaque tâche peut aussi avoir sa propre note.
 - Installable sur ton téléphone comme une vraie appli, et consultable hors connexion.
