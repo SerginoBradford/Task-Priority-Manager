@@ -892,17 +892,22 @@
 
     bindAuth();
     let started = false;
+    // Important : ne jamais appeler Supabase directement dans ce callback
+    // (il s'exécute pendant que Supabase détient son verrou de session).
+    // On reporte donc le travail juste après avec setTimeout.
     sb.auth.onAuthStateChange((event, session) => {
-      if (session && session.user) {
-        if (!started || (S.user && S.user.id !== session.user.id)) {
-          S.user = session.user; started = true; startApp();
-        } else {
-          S.user = session.user;
+      setTimeout(() => {
+        if (session && session.user) {
+          if (!started || (S.user && S.user.id !== session.user.id)) {
+            S.user = session.user; started = true; startApp();
+          } else {
+            S.user = session.user;
+          }
+        } else if (event === 'SIGNED_OUT' || !session) {
+          started = false; S.user = null; S.tasks = []; S.notes = [];
+          showAuth();
         }
-      } else if (event === 'SIGNED_OUT' || !session) {
-        started = false; S.user = null; S.tasks = []; S.notes = [];
-        showAuth();
-      }
+      }, 0);
     });
   }
 

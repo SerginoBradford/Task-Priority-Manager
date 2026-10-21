@@ -1,6 +1,6 @@
 // Service worker : permet d'ouvrir l'appli sans connexion.
 // Pense à changer VERSION après chaque mise à jour des fichiers.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'mes-priorites-' + VERSION;
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './config.js',
