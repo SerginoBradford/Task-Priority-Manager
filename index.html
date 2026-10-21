@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Mes priorités</title>
+<meta name="description" content="Mes tâches par priorité, ma liste du jour et mes notes.">
+<meta name="theme-color" content="#F2F4F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10141B" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Priorités">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Connexion (affichée seulement quand Supabase est configuré) -->
+<div id="auth" class="auth" hidden>
+  <form id="auth-form" class="auth-card" novalidate>
+    <div class="brand brand-lg"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Mes priorités</span></div>
+    <p class="auth-sub" id="auth-sub">Connecte-toi pour retrouver tes tâches et tes notes sur tous tes appareils.</p>
+    <label class="field"><span>E-mail</span><input id="auth-email" type="email" autocomplete="email" required></label>
+    <label class="field"><span>Mot de passe</span><input id="auth-pass" type="password" autocomplete="current-password" minlength="6" required></label>
+    <p id="auth-msg" class="auth-msg" role="status"></p>
+    <button id="auth-submit" class="btn btn-primary btn-block" type="submit">Se connecter</button>
+    <button id="auth-switch" class="btn-link" type="button">Pas encore de compte ? Créer un compte</button>
+  </form>
+</div>
+
+<div id="app" class="app" hidden>
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Mes priorités</span></div>
+      <nav class="tabs" id="tabs" aria-label="Vues">
+        <button type="button" data-view="jour"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg><span>Ma journée</span></button>
+        <button type="button" data-view="ensemble"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h11M4 18h7"/></svg><span>Vue d'ensemble</span></button>
+        <button type="button" data-view="notes"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20z"/><path d="M9 11h7M9 15h5"/></svg><span>Notes</span></button>
+      </nav>
+      <div class="top-right">
+        <span id="sync" class="sync" role="status"></span>
+        <button id="menu-btn" class="icon-btn" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        </button>
+        <div id="menu" class="menu" hidden>
+          <p id="menu-account" class="menu-account"></p>
+          <button type="button" data-menu="export">Exporter mes données</button>
+          <button type="button" data-menu="logout" id="menu-logout">Se déconnecter</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div id="banner"></div>
+  <main id="main" class="main"></main>
+</div>
+
+<!-- Fiche tâche -->
+<div id="overlay" class="overlay" hidden>
+  <form id="task-form" class="sheet" novalidate aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <h2 id="sheet-title">Nouvelle tâche</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <label class="field"><span>Tâche</span><input id="f-title" type="text" required maxlength="200" placeholder="Ex. Envoyer le devis au client"></label>
+    <fieldset class="field">
+      <legend>Priorité</legend>
+      <div class="prio-pick">
+        <label class="pp p1"><input type="radio" name="f-prio" id="f-prio-1" value="1"><span>Critique</span></label>
+        <label class="pp p2"><input type="radio" name="f-prio" id="f-prio-2" value="2"><span>Haute</span></label>
+        <label class="pp p3"><input type="radio" name="f-prio" id="f-prio-3" value="3"><span>Moyenne</span></label>
+        <label class="pp p4"><input type="radio" name="f-prio" id="f-prio-4" value="4"><span>Basse</span></label>
+      </div>
+    </fieldset>
+    <div class="row2">
+      <label class="field"><span>Date</span><input id="f-date" type="date"></label>
+      <label class="field"><span>Durée estimée</span>
+        <select id="f-dur">
+          <option value="">Non précisée</option>
+          <option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option>
+          <option value="45">45 min</option><option value="60">1 h</option><option value="90">1 h 30</option>
+          <option value="120">2 h</option><option value="180">3 h</option><option value="240">4 h</option>
+        </select>
+      </label>
+    </div>
+    <div class="chips" id="f-date-chips">
+      <button type="button" class="chip" data-when="0">Aujourd'hui</button>
+      <button type="button" class="chip" data-when="1">Demain</button>
+      <button type="button" class="chip" data-when="7">Dans une semaine</button>
+      <button type="button" class="chip" data-when="none">Sans date</button>
+    </div>
+    <label class="field"><span>Catégorie</span><input id="f-cat" type="text" list="cat-list" maxlength="40" placeholder="Travail, Perso…"></label>
+    <datalist id="cat-list"></datalist>
+    <label class="field"><span>Notes</span><textarea id="f-notes" rows="3" placeholder="Détails, liens, étapes…"></textarea></label>
+    <div class="sheet-foot">
+      <button type="button" id="f-delete" class="btn btn-danger-ghost">Supprimer</button>
+      <span class="grow"></span>
+      <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
+    </div>
+  </form>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
